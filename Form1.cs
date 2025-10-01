@@ -7,11 +7,11 @@ namespace OSlab1
 {
     public partial class Form1 : Form
     {
-        // Буферы
+
         private readonly Buffer<string> buffer1 = new Buffer<string>(capacity: 5);
         private readonly Buffer<string> buffer2 = new Buffer<string>(capacity: 5);
 
-        // Потоки и управляющие объекты
+
         private Thread producerThread;
         private Thread processorThread;
         private Thread consumerThread;
@@ -29,7 +29,6 @@ namespace OSlab1
         {
             InitializeComponent();
             InitUI();
-            // !!! Потоки запускать в событии загрузки формы, а не в конструкторе
             this.Load += (s, e) =>
             {
                 StartThreads();
@@ -39,24 +38,20 @@ namespace OSlab1
 
         private void InitUI()
         {
-            // Создаём простые контролы программно (можно заменить на дизайнером)
             this.Text = "Producer-Processor-Consumer";
             this.Width = 900;
             this.Height = 600;
-
-            // ListBoxes для буферов
+            //Текстбоксы
             var lbBuffer1 = new ListBox() { Name = "lbBuffer1", Top = 10, Left = 10, Width = 250, Height = 200 };
             var lbBuffer2 = new ListBox() { Name = "lbBuffer2", Top = 10, Left = 270, Width = 250, Height = 200 };
             this.Controls.Add(lbBuffer1);
             this.Controls.Add(lbBuffer2);
-
-            // Labels
             var lbl1 = new Label() { Text = "Buffer1 (stack top -> index 0)", Top = 220, Left = 10, Width = 250 };
             var lbl2 = new Label() { Text = "Buffer2 (stack top -> index 0)", Top = 220, Left = 270, Width = 250 };
             this.Controls.Add(lbl1);
             this.Controls.Add(lbl2);
 
-            // Buttons: pause/resume for each thread
+            // Кнопки
             var btnProd = new Button() { Text = "Pause Producer", Top = 260, Left = 10, Width = 120 };
             var btnProdResume = new Button() { Text = "Resume Producer", Top = 260, Left = 140, Width = 120 };
             btnProd.Click += (s, e) => { producerPause.Reset(); UpdateThreadStatus(); };
@@ -90,10 +85,9 @@ namespace OSlab1
             this.Controls.Add(btnStop);
 
             // Timer to update UI
-            uiUpdateTimer.Interval = 300; // ms
+            uiUpdateTimer.Interval = 300; 
             uiUpdateTimer.Tick += (s, e) =>
             {
-                // Update buffer displays
                 var arr1 = buffer1.GetSnapshot();
                 var arr2 = buffer2.GetSnapshot();
                 var lb1 = (ListBox)this.Controls["lbBuffer1"];
@@ -103,7 +97,6 @@ namespace OSlab1
                 foreach (var item in arr1) lb1.Items.Add(item);
                 foreach (var item in arr2) lb2.Items.Add(item);
 
-                // Update statuses
                 UpdateThreadStatus();
             };
         }
@@ -154,15 +147,15 @@ namespace OSlab1
                 producerPause.Wait(); // pause/resume
 
                 // produce message
-                string msg = $"Msg#{Interlocked.Increment(ref producedCount)} [from Producer at {DateTime.Now:HH:mm:ss}]";
+                string msg = $"Msg#{Interlocked.Increment(ref producedCount)}";
 
                 // попытка поместить в buffer1 (блокирующая, если полный)
                 buffer1.Put(msg);
 
-                LogOnUI($"Producer -> put to buffer1: {msg}");
+                LogOnUI("Producer: " + msg);
 
                 // small delay to visualize
-                Thread.Sleep(500);
+                Thread.Sleep(900);
             }
 
             LogOnUI("Producer stopped.");
@@ -177,17 +170,15 @@ namespace OSlab1
                 // take from buffer1 (блокирующая, если пуст)
                 string taken = buffer1.Take();
 
-                LogOnUI($"Processor <- took from buffer1: {taken}");
-
                 // add its info
-                string processed = taken + $" + ProcessorTag({Thread.CurrentThread.ManagedThreadId} at {DateTime.Now:HH:mm:ss})";
+                string processed = taken + " + ProcessorTag";
 
                 // put into buffer2
                 buffer2.Put(processed);
 
-                LogOnUI($"Processor -> put to buffer2: {processed}");
+                LogOnUI("Processor: " + processed);
 
-                Thread.Sleep(700);
+                Thread.Sleep(1100);
             }
 
             LogOnUI("Processor stopped.");
@@ -200,13 +191,13 @@ namespace OSlab1
                 consumerPause.Wait();
 
                 string taken = buffer2.Take();
-                LogOnUI($"Consumer <- took from buffer2: {taken}");
+               
 
-                string finalMsg = taken + $" + ConsumerTag({Thread.CurrentThread.ManagedThreadId} at {DateTime.Now:HH:mm:ss})";
+                string finalMsg = taken + " + ConsumerTag";
 
-                LogOnUI($">>> Final: {finalMsg}");
+                LogOnUI("Consumer: " + finalMsg);
 
-                Thread.Sleep(900);
+                Thread.Sleep(1300);
             }
 
             LogOnUI("Consumer stopped.");
@@ -214,13 +205,10 @@ namespace OSlab1
 
         private void LogOnUI(string text)
         {
-            if (this.IsDisposed) return;
             this.BeginInvoke(new Action(() =>
             {
                 var tb = (TextBox)this.Controls["tbLog"];
-                tb.AppendText($"[{DateTime.Now:HH:mm:ss}] {text}{Environment.NewLine}");
-                // keep last line visible
-                tb.SelectionStart = tb.Text.Length;
+                tb.AppendText(text + Environment.NewLine);
                 tb.ScrollToCaret();
             }));
         }
