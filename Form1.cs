@@ -43,8 +43,8 @@ namespace OSlab1
             this.Controls.Add(lbBuffer1);
             this.Controls.Add(lbBuffer2);
 
-            var lbl1 = new Label() { Text = "Buffer1 (stack top -> index 0)", Top = 220, Left = 10, Width = 250 };
-            var lbl2 = new Label() { Text = "Buffer2 (stack top -> index 0)", Top = 220, Left = 270, Width = 250 };
+            var lbl1 = new Label() {  Top = 220, Left = 10, Width = 250 };
+            var lbl2 = new Label() {  Top = 220, Left = 270, Width = 250 };
             this.Controls.Add(lbl1);
             this.Controls.Add(lbl2);
 
@@ -210,7 +210,6 @@ namespace OSlab1
         }
     }
 
-    // Новый неблокирующий буфер
     public class Buffer<T>
     {
         private readonly Stack<T> stack = new Stack<T>();
