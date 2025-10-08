@@ -7,10 +7,8 @@ namespace OSlab1
 {
     public partial class Form1 : Form
     {
-
         private readonly Buffer<string> buffer1 = new Buffer<string>(capacity: 5);
         private readonly Buffer<string> buffer2 = new Buffer<string>(capacity: 5);
-
 
         private Thread producerThread;
         private Thread processorThread;
@@ -21,8 +19,6 @@ namespace OSlab1
         private readonly ManualResetEventSlim consumerPause = new ManualResetEventSlim(true);
 
         private volatile bool stopRequested = false;
-
-        // Для логов
         private int producedCount = 0;
 
         public Form1()
@@ -41,17 +37,17 @@ namespace OSlab1
             this.Text = "Producer-Processor-Consumer";
             this.Width = 900;
             this.Height = 600;
-            //Текстбоксы
+
             var lbBuffer1 = new ListBox() { Name = "lbBuffer1", Top = 10, Left = 10, Width = 250, Height = 200 };
             var lbBuffer2 = new ListBox() { Name = "lbBuffer2", Top = 10, Left = 270, Width = 250, Height = 200 };
             this.Controls.Add(lbBuffer1);
             this.Controls.Add(lbBuffer2);
+
             var lbl1 = new Label() { Text = "Buffer1 (stack top -> index 0)", Top = 220, Left = 10, Width = 250 };
             var lbl2 = new Label() { Text = "Buffer2 (stack top -> index 0)", Top = 220, Left = 270, Width = 250 };
             this.Controls.Add(lbl1);
             this.Controls.Add(lbl2);
 
-            // Кнопки
             var btnProd = new Button() { Text = "Pause Producer", Top = 260, Left = 10, Width = 120 };
             var btnProdResume = new Button() { Text = "Resume Producer", Top = 260, Left = 140, Width = 120 };
             btnProd.Click += (s, e) => { producerPause.Reset(); UpdateThreadStatus(); };
@@ -69,23 +65,19 @@ namespace OSlab1
 
             this.Controls.AddRange(new Control[] { btnProd, btnProdResume, btnProc, btnProcResume, btnCons, btnConsResume });
 
-            // Log textbox
             var tbLog = new TextBox() { Name = "tbLog", Top = 10, Left = 540, Width = 320, Height = 480, Multiline = true, ScrollBars = ScrollBars.Vertical };
             this.Controls.Add(tbLog);
 
-            // Status labels
             var lblStatusProducer = new Label() { Name = "lblProducer", Top = 260, Left = 270, Width = 250 };
             var lblStatusProcessor = new Label() { Name = "lblProcessor", Top = 300, Left = 270, Width = 250 };
             var lblStatusConsumer = new Label() { Name = "lblConsumer", Top = 340, Left = 270, Width = 250 };
             this.Controls.AddRange(new Control[] { lblStatusProducer, lblStatusProcessor, lblStatusConsumer });
 
-            // Stop button
             var btnStop = new Button() { Text = "Stop All", Top = 380, Left = 10, Width = 250 };
             btnStop.Click += (s, e) => StopAll();
             this.Controls.Add(btnStop);
 
-            // Timer to update UI
-            uiUpdateTimer.Interval = 300; 
+            uiUpdateTimer.Interval = 300;
             uiUpdateTimer.Tick += (s, e) =>
             {
                 var arr1 = buffer1.GetSnapshot();
@@ -130,31 +122,24 @@ namespace OSlab1
         private void StopAll()
         {
             stopRequested = true;
-            // Resume all so they can exit if paused
             producerPause.Set();
             processorPause.Set();
             consumerPause.Set();
-
-            // Pulse buffers in case threads are waiting
-            buffer1.PulseAll();
-            buffer2.PulseAll();
         }
 
         private void ProducerWork()
         {
             while (!stopRequested)
             {
-                producerPause.Wait(); // pause/resume
+                producerPause.Wait();
 
-                // produce message
                 string msg = $"Msg#{Interlocked.Increment(ref producedCount)}";
 
-                // попытка поместить в buffer1 (блокирующая, если полный)
-                buffer1.Put(msg);
+                if (buffer1.Put(msg))
+                    LogOnUI("Producer: " + msg);
+                else
+                    LogOnUI("Producer: Buffer1 full, skipping...");
 
-                LogOnUI("Producer: " + msg);
-
-                // small delay to visualize
                 Thread.Sleep(900);
             }
 
@@ -167,16 +152,18 @@ namespace OSlab1
             {
                 processorPause.Wait();
 
-                // take from buffer1 (блокирующая, если пуст)
-                string taken = buffer1.Take();
-
-                // add its info
-                string processed = taken + " + ProcessorTag";
-
-                // put into buffer2
-                buffer2.Put(processed);
-
-                LogOnUI("Processor: " + processed);
+                if (buffer1.Take(out string taken))
+                {
+                    string processed = taken + " + ProcessorTag";
+                    if (buffer2.Put(processed))
+                        LogOnUI("Processor: " + processed);
+                    else
+                        LogOnUI("Processor: Buffer2 full, skipping...");
+                }
+                else
+                {
+                    LogOnUI("Processor: Buffer1 empty, waiting...");
+                }
 
                 Thread.Sleep(1100);
             }
@@ -190,12 +177,15 @@ namespace OSlab1
             {
                 consumerPause.Wait();
 
-                string taken = buffer2.Take();
-               
-
-                string finalMsg = taken + " + ConsumerTag";
-
-                LogOnUI("Consumer: " + finalMsg);
+                if (buffer2.Take(out string taken))
+                {
+                    string finalMsg = taken + " + ConsumerTag";
+                    LogOnUI("Consumer: " + finalMsg);
+                }
+                else
+                {
+                    LogOnUI("Consumer: Buffer2 empty, waiting...");
+                }
 
                 Thread.Sleep(1300);
             }
@@ -220,7 +210,7 @@ namespace OSlab1
         }
     }
 
-    // Буфер: стек с монитором синхронизации (Enter/Exit, Wait/Pulse)
+    // Новый неблокирующий буфер
     public class Buffer<T>
     {
         private readonly Stack<T> stack = new Stack<T>();
@@ -233,81 +223,38 @@ namespace OSlab1
             this.capacity = capacity;
         }
 
-        // Положить элемент (блокирует, если полный)
-        public void Put(T item)
+        public bool Put(T item)
         {
-            bool lockTaken = false;
-            try
+            lock (sync)
             {
-                Monitor.Enter(sync, ref lockTaken);
-                while (stack.Count >= capacity)
-                {
-                    // ждать освобождения места
-                    Monitor.Wait(sync);
-                }
+                if (stack.Count >= capacity)
+                    return false;
 
                 stack.Push(item);
-
-                // уведомляем потребителей
-                Monitor.PulseAll(sync);
-            }
-            finally
-            {
-                if (lockTaken) Monitor.Exit(sync);
+                return true;
             }
         }
 
-        // Взять элемент (блокирует, если пуст)
-        public T Take()
+        public bool Take(out T item)
         {
-            bool lockTaken = false;
-            try
+            lock (sync)
             {
-                Monitor.Enter(sync, ref lockTaken);
-                while (stack.Count == 0)
+                if (stack.Count == 0)
                 {
-                    // ждать появления элемента
-                    Monitor.Wait(sync);
+                    item = default;
+                    return false;
                 }
 
-                T item = stack.Pop();
-                // уведомляем производителей (что есть место)
-                Monitor.PulseAll(sync);
-                return item;
-            }
-            finally
-            {
-                if (lockTaken) Monitor.Exit(sync);
+                item = stack.Pop();
+                return true;
             }
         }
 
-        // Получить копию содержимого (для UI) — с захватом монитора
         public T[] GetSnapshot()
         {
-            bool lockTaken = false;
-            try
+            lock (sync)
             {
-                Monitor.Enter(sync, ref lockTaken);
-                return stack.ToArray(); // ToArray возвращает массив с вершины стека первым
-            }
-            finally
-            {
-                if (lockTaken) Monitor.Exit(sync);
-            }
-        }
-
-        // Само по себе не стандартный API, но полезно, чтобы "разбудить" все ожидающие потоки при завершении
-        public void PulseAll()
-        {
-            bool lockTaken = false;
-            try
-            {
-                Monitor.Enter(sync, ref lockTaken);
-                Monitor.PulseAll(sync);
-            }
-            finally
-            {
-                if (lockTaken) Monitor.Exit(sync);
+                return stack.ToArray();
             }
         }
     }
